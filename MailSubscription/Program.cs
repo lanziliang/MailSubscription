@@ -20,42 +20,47 @@ namespace MailSubscription
 
     class Program
     {
-
-        static List<HtmlNode> formNodes = new List<HtmlNode>();
         static List<PostData> dataList = new List<PostData>();
 
         static void Main(string[] args)
         {
-            //DataTable dt = ReadCsv("top-1m.csv");
+            DataTable dt = ReadCsv("top-1m.csv");
             //Console.WriteLine(dt.Rows[101][1]);
 
-            //string action = GetAction("http://" + dt.Rows[101][1]);
-            //string url = "http://www." + dt.Rows[101][1] + action;
-            //Console.WriteLine(url);
+            for (int i = 8070; i < 8100; i++)
+            {
+                Console.WriteLine(dt.Rows[i][1]);
 
+                string url = "http://www." + dt.Rows[i][1];
+                Console.WriteLine(url);
+
+                SetPostData(url);
+            }
+
+            
+
+
+            //bool re1 = SetPostData("http://www.vitaminstore.nl");
+            //bool re2 = SetPostData("http://www.notonthehighstreet.com");
+            //bool re3 = SetPostData("http://www.hongkiat.com");
+            //bool re4 = SetPostData("http://www.vitaminedz.com");
 
             WebClient client = new WebClient();
             client.Encoding = System.Text.Encoding.Default;
-            string s = client.OpenRead("http://www.notonthehighstreet.com/communication-preference", "newsletter_subscription[user_email]=lanziliang11@163.com");
-
-            Console.WriteLine(s);
 
 
-            //for (int i = 100; i < 130; i++)
-            //{
-            //    Console.WriteLine(dt.Rows[i][1]);
+            foreach (var data in dataList)
+            {
+                Console.WriteLine("Request Url:{0}", data.requestUrl);
+                Console.WriteLine("Input Name:{0}", data.inputName);
 
-            //    string action = GetAction("http://" + dt.Rows[i][1]);
-            //    if (action == null)
-            //    {
-            //        continue;
-            //    }
-            //    else
-            //    {
-            //        string url = "http://" + dt.Rows[i][1] + action;
-            //        actionUrl.Add(url);
-            //    }
-            //}
+                //string s = client.OpenRead("http://www.notonthehighstreet.com/communication-preference", "newsletter_subscription[user_email]=lanziliang11@163.com");
+
+            }
+
+            Console.WriteLine("end");
+
+            
 
 
             //foreach(var act in actionUrl)
@@ -94,7 +99,7 @@ namespace MailSubscription
         /// <returns></returns>
         public static bool SetPostData(string url)
         {
-            string htmlStr = GetHtmlStr(url);
+            string htmlStr = GetHtmlStr(url).ToLower();
             //Console.WriteLine(htmlStr);
 
             //访问网站超时或出错
@@ -102,32 +107,65 @@ namespace MailSubscription
                 return false;
 
             HtmlDocument doc = new HtmlDocument();
+            HtmlNode.ElementsFlags.Remove("form");
             doc.LoadHtml(htmlStr);
-
             HtmlNode rootNode = doc.DocumentNode;
-            string xpathStr = "//input[contains(@name,'Email') and @type='text']";
-            HtmlNodeCollection inputNodes = rootNode.SelectNodes(xpathStr);
 
-            //没有找到email输入框
-            if (inputNodes == null)
+            //1.先查找所有form节点
+            //2.再查找包含input节点（name属性含有email）并且不包含password的input框 的form节点
+            //3.获取action和input的name值
+
+            HtmlNodeCollection formNodes = rootNode.SelectNodes("//form[@method='post']");
+
+            if (formNodes == null)
             {
+                Console.WriteLine("没有找到form");
                 return false;
             }
 
-            foreach (var item in inputNodes)
+            //遍历form节点
+            foreach (var formNode in formNodes)
             {
-                foreach (var anc in item.Ancestors())
+                HtmlNodeCollection emailInput;
+                //表单包含email输入框并且不包含密码输入框
+                if (((emailInput = formNode.SelectNodes(".//input[(@type='email' or @type='text') and contains(@name,'email')]")) != null) && (formNode.SelectNodes(".//input[@type='password']") == null))
                 {
-                    HtmlNode formNode = anc.SelectSingleNode("child::form");
-                    if (formNode != null)
+
+                    Console.WriteLine("111");
+                    string _requestUrl;
+                    string _inputName;
+
+                    //获取action 并组装post请求地址
+                    string action = formNode.Attributes["action"].Value;
+                    if (string.IsNullOrEmpty(action))
                     {
-                        formNodes.Add(formNode);
+                        _requestUrl = url;
                     }
+                    else if (action.Contains("http:"))
+                    {
+                        _requestUrl = action;
+                    }
+                    else
+                    {
+                        _requestUrl = url + action;
+                    }
+
+                    //获取input属性name的值
+                    _inputName = emailInput.First().Attributes["name"].Value;
+
+                    //添加到dataList中
+                    dataList.Add(new PostData { requestUrl = _requestUrl, inputName = _inputName });
+
+                    return true;
+                }
+                else
+                {
+                    continue;
                 }
             }
 
-
-            return formNodes.First().GetAttributeValue("action", "");
+            Console.WriteLine("没有找到email subscribe");
+            return false;
         }
 
         /// <summary>
