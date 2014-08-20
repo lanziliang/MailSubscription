@@ -1,0 +1,9 @@
+F:\ASP.net\MailSubscription\MailSubscription\bin\Debug\MailSubscription.exe.config
+F:\ASP.net\MailSubscription\MailSubscription\bin\Debug\MailSubscription.exe
+F:\ASP.net\MailSubscription\MailSubscription\bin\Debug\MailSubscription.pdb
+F:\ASP.net\MailSubscription\MailSubscription\obj\Debug\MailSubscription.csprojResolveAssemblyReference.cache
+F:\ASP.net\MailSubscription\MailSubscription\obj\Debug\MailSubscription.exe
+F:\ASP.net\MailSubscription\MailSubscription\obj\Debug\MailSubscription.pdb
+F:\ASP.net\MailSubscription\MailSubscription\bin\Debug\HtmlAgilityPack.dll
+F:\ASP.net\MailSubscription\MailSubscription\bin\Debug\HtmlAgilityPack.pdb
+F:\ASP.net\MailSubscription\MailSubscription\bin\Debug\HtmlAgilityPack.xml
