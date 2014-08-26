@@ -132,9 +132,17 @@ namespace MailSubscription
         ///<returns>服务器响应文本</returns>
         public string OpenRead(string URL)
         {
-            requestHeaders.Add("Connection", "close");
-            SendRequestData(URL, "GET");
-            return GetHtml();
+            try
+            {
+                requestHeaders.Add("Connection", "close");
+                SendRequestData(URL, "GET");
+                return GetHtml();
+            }
+            catch(Exception e)
+            {
+                Console.WriteLine("出错了：{0}", e.Message);
+                return null;
+            }
         }
 
 
@@ -154,24 +162,32 @@ namespace MailSubscription
 
         public string OpenReadWithHttps(string URL, string strPostdata)
         {
-            ServicePointManager.CertificatePolicy = new CertPolicy();
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(URL);
-            request.CookieContainer = new CookieContainer();
-            request.Method = "POST";
-            request.Accept = "*/*";
-            request.ContentType = "application/x-www-form-urlencoded";
-            byte[] buffer = this.encoding.GetBytes(strPostdata);
-            request.ContentLength = buffer.Length;
-            request.GetRequestStream().Write(buffer, 0, buffer.Length);
-            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-            StreamReader reader = new StreamReader(response.GetResponseStream(), encoding);
-            this.respHtml = reader.ReadToEnd();
-            foreach (System.Net.Cookie ck in response.Cookies)
+            try
             {
-                this.cookie += ck.Name + "=" + ck.Value + ";";
+                ServicePointManager.CertificatePolicy = new CertPolicy();
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(URL);
+                request.CookieContainer = new CookieContainer();
+                request.Method = "POST";
+                request.Accept = "*/*";
+                request.ContentType = "application/x-www-form-urlencoded";
+                byte[] buffer = this.encoding.GetBytes(strPostdata);
+                request.ContentLength = buffer.Length;
+                request.GetRequestStream().Write(buffer, 0, buffer.Length);
+                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+                StreamReader reader = new StreamReader(response.GetResponseStream(), encoding);
+                this.respHtml = reader.ReadToEnd();
+                foreach (System.Net.Cookie ck in response.Cookies)
+                {
+                    this.cookie += ck.Name + "=" + ck.Value + ";";
+                }
+                reader.Close();
+                return respHtml;
             }
-            reader.Close();
-            return respHtml;
+            catch (WebException e)
+            {
+                Console.WriteLine("出错了：{0}", e.Message);
+                return null;
+            }
         }
 
         ///<summary>
@@ -182,16 +198,24 @@ namespace MailSubscription
         ///<returns>服务器响应文本</returns>
         public string OpenRead(string URL, string postData)
         {
-            byte[] sendBytes = encoding.GetBytes(postData);
-            postStream = new MemoryStream();
-            postStream.Write(sendBytes, 0, sendBytes.Length);
+            try
+            {
+                byte[] sendBytes = encoding.GetBytes(postData);
+                postStream = new MemoryStream();
+                postStream.Write(sendBytes, 0, sendBytes.Length);
 
-            requestHeaders.Add("Content-Length", postStream.Length.ToString());
-            requestHeaders.Add("Content-Type", "application/x-www-form-urlencoded");
-            requestHeaders.Add("Connection", "close");
+                requestHeaders.Add("Content-Length", postStream.Length.ToString());
+                requestHeaders.Add("Content-Type", "application/x-www-form-urlencoded");
+                requestHeaders.Add("Connection", "close");
 
-            SendRequestData(URL, "POST");
-            return GetHtml();
+                SendRequestData(URL, "POST");
+                return GetHtml();
+            }
+            catch (WebException e)
+            {
+                Console.WriteLine("出错了：{0}", e.Message);
+                return null;
+            }
         }
 
 
@@ -371,55 +395,62 @@ namespace MailSubscription
         ///<param name="showProgress">是否显示上传进度</param>
         private void SendRequestData(string URL, string method, bool showProgress)
         {
-            clientSocket = new TcpClient();
-            Uri URI = new Uri(URL);
-            clientSocket.Connect(URI.Host, URI.Port);
-
-            requestHeaders.Add("Host", URI.Host);
-            byte[] request = GetRequestHeaders(method + " " + URI.PathAndQuery + " HTTP/1.1");
-            clientSocket.Client.Send(request);
-
-            //若有实体内容就发送它
-            if (postStream != null)
+            try
             {
-                byte[] buffer = new byte[SEND_BUFFER_SIZE];
-                int count = 0;
-                Stream sm = clientSocket.GetStream();
-                postStream.Position = 0;
+                clientSocket = new TcpClient();
+                Uri URI = new Uri(URL);
+                clientSocket.Connect(URI.Host, URI.Port);
 
-                UploadEventArgs e = new UploadEventArgs();
-                e.totalBytes = postStream.Length;
-                System.Diagnostics.Stopwatch timer = new System.Diagnostics.Stopwatch();//计时器
-                timer.Start();
-                do
+                requestHeaders.Add("Host", URI.Host);
+                byte[] request = GetRequestHeaders(method + " " + URI.PathAndQuery + " HTTP/1.1");
+                clientSocket.Client.Send(request);
+
+                //若有实体内容就发送它
+                if (postStream != null)
                 {
-                    //如果取消就推出
-                    if (isCanceled) { break; }
+                    byte[] buffer = new byte[SEND_BUFFER_SIZE];
+                    int count = 0;
+                    Stream sm = clientSocket.GetStream();
+                    postStream.Position = 0;
 
-                    //读取要发送的数据
-                    count = postStream.Read(buffer, 0, buffer.Length);
-                    //发送到服务器
-                    sm.Write(buffer, 0, count);
-
-                    //是否显示进度
-                    if (showProgress)
+                    UploadEventArgs e = new UploadEventArgs();
+                    e.totalBytes = postStream.Length;
+                    System.Diagnostics.Stopwatch timer = new System.Diagnostics.Stopwatch();//计时器
+                    timer.Start();
+                    do
                     {
-                        //触发事件
-                        e.bytesSent += count;
-                        e.sendProgress = (double)e.bytesSent / (double)e.totalBytes;
-                        double t = timer.ElapsedMilliseconds / 1000;
-                        t = t <= 0 ? 1 : t;
-                        e.sendSpeed = (double)e.bytesSent / t;
-                        if (UploadProgressChanged != null) { UploadProgressChanged(this, e); }
-                    }
+                        //如果取消就推出
+                        if (isCanceled) { break; }
 
-                } while (count > 0);
-                timer.Stop();
-                postStream.Close();
-                //postStream.Dispose();
-                postStream = null;
+                        //读取要发送的数据
+                        count = postStream.Read(buffer, 0, buffer.Length);
+                        //发送到服务器
+                        sm.Write(buffer, 0, count);
 
-            }//end if
+                        //是否显示进度
+                        if (showProgress)
+                        {
+                            //触发事件
+                            e.bytesSent += count;
+                            e.sendProgress = (double)e.bytesSent / (double)e.totalBytes;
+                            double t = timer.ElapsedMilliseconds / 1000;
+                            t = t <= 0 ? 1 : t;
+                            e.sendSpeed = (double)e.bytesSent / t;
+                            if (UploadProgressChanged != null) { UploadProgressChanged(this, e); }
+                        }
+
+                    } while (count > 0);
+                    timer.Stop();
+                    postStream.Close();
+                    //postStream.Dispose();
+                    postStream = null;
+
+                }//end if
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("出错了：{0}", e.Message);
+            }
 
         }
 
@@ -487,85 +518,92 @@ namespace MailSubscription
         ///<param name="needProgress">是否显示进度</param>
         private void SaveNetworkStream(Stream toStream, bool showProgress)
         {
-            //获取要保存的网络流
-            NetworkStream NetStream = clientSocket.GetStream();
-
-            byte[] buffer = new byte[RECEIVE_BUFFER_SIZE];
-            int count = 0, startIndex = 0;
-
-            MemoryStream ms = new MemoryStream();
-            for (int i = 0; i < 3; i++)
+            try
             {
-                count = NetStream.Read(buffer, 0, 500);
-                ms.Write(buffer, 0, count);
-            }
+                //获取要保存的网络流
+                NetworkStream NetStream = clientSocket.GetStream();
 
-            if (ms.Length == 0) { NetStream.Close(); throw new Exception("远程服务器没有响应"); }
+                byte[] buffer = new byte[RECEIVE_BUFFER_SIZE];
+                int count = 0, startIndex = 0;
 
-            buffer = ms.GetBuffer();
-            count = (int)ms.Length;
-
-            GetResponseHeader(buffer, out startIndex);//分析响应，获取响应头和响应实体
-            count -= startIndex;
-            toStream.Write(buffer, startIndex, count);
-
-            DownloadEventArgs e = new DownloadEventArgs();
-
-            if (responseHeaders["Content-Length"] != null)
-            { e.totalBytes = long.Parse(responseHeaders["Content-Length"]); }
-            else
-            { e.totalBytes = -1; }
-
-            //启动计时器
-            System.Diagnostics.Stopwatch timer = new System.Diagnostics.Stopwatch();
-            timer.Start();
-
-            do
-            {
-                //如果取消就推出
-                if (isCanceled) { break; }
-
-                //显示下载进度
-                if (showProgress)
+                MemoryStream ms = new MemoryStream();
+                for (int i = 0; i < 3; i++)
                 {
-                    e.bytesReceived += count;
-                    e.ReceiveProgress = (double)e.bytesReceived / (double)e.totalBytes;
-
-                    byte[] tempBuffer = new byte[count];
-                    Array.Copy(buffer, startIndex, tempBuffer, 0, count);
-                    e.receivedBuffer = tempBuffer;
-
-                    double t = (timer.ElapsedMilliseconds + 0.1) / 1000;
-                    e.receiveSpeed = (double)e.bytesReceived / t;
-
-                    startIndex = 0;
-                    if (DownloadProgressChanged != null) { DownloadProgressChanged(this, e); }
+                    count = NetStream.Read(buffer, 0, 500);
+                    ms.Write(buffer, 0, count);
                 }
 
-                //读取网路数据到缓冲区
-                count = NetStream.Read(buffer, 0, buffer.Length);
+                if (ms.Length == 0) { NetStream.Close(); throw new Exception("远程服务器没有响应"); }
 
-                //将缓存区数据保存到指定流
-                toStream.Write(buffer, 0, count);
-            } while (count > 0);
+                buffer = ms.GetBuffer();
+                count = (int)ms.Length;
 
-            timer.Stop();//关闭计时器
+                GetResponseHeader(buffer, out startIndex);//分析响应，获取响应头和响应实体
+                count -= startIndex;
+                toStream.Write(buffer, startIndex, count);
 
-            if (responseHeaders["Content-Length"] != null)
-            {
-                toStream.SetLength(long.Parse(responseHeaders["Content-Length"]));
+                DownloadEventArgs e = new DownloadEventArgs();
+
+                if (responseHeaders["Content-Length"] != null)
+                { e.totalBytes = long.Parse(responseHeaders["Content-Length"]); }
+                else
+                { e.totalBytes = -1; }
+
+                //启动计时器
+                System.Diagnostics.Stopwatch timer = new System.Diagnostics.Stopwatch();
+                timer.Start();
+
+                do
+                {
+                    //如果取消就推出
+                    if (isCanceled) { break; }
+
+                    //显示下载进度
+                    if (showProgress)
+                    {
+                        e.bytesReceived += count;
+                        e.ReceiveProgress = (double)e.bytesReceived / (double)e.totalBytes;
+
+                        byte[] tempBuffer = new byte[count];
+                        Array.Copy(buffer, startIndex, tempBuffer, 0, count);
+                        e.receivedBuffer = tempBuffer;
+
+                        double t = (timer.ElapsedMilliseconds + 0.1) / 1000;
+                        e.receiveSpeed = (double)e.bytesReceived / t;
+
+                        startIndex = 0;
+                        if (DownloadProgressChanged != null) { DownloadProgressChanged(this, e); }
+                    }
+
+                    //读取网路数据到缓冲区
+                    count = NetStream.Read(buffer, 0, buffer.Length);
+
+                    //将缓存区数据保存到指定流
+                    toStream.Write(buffer, 0, count);
+                } while (count > 0);
+
+                timer.Stop();//关闭计时器
+
+                if (responseHeaders["Content-Length"] != null)
+                {
+                    toStream.SetLength(long.Parse(responseHeaders["Content-Length"]));
+                }
+                //else
+                //{
+                //    toStream.SetLength(toStream.Length);
+                //    responseHeaders.Add("Content-Length", toStream.Length.ToString());//添加响应标头
+                //}
+
+                toStream.Position = 0;
+
+                //关闭网络流和网络连接
+                NetStream.Close();
+                clientSocket.Close();
             }
-            //else
-            //{
-            //    toStream.SetLength(toStream.Length);
-            //    responseHeaders.Add("Content-Length", toStream.Length.ToString());//添加响应标头
-            //}
-
-            toStream.Position = 0;
-
-            //关闭网络流和网络连接
-            NetStream.Close();
-            clientSocket.Close();
+            catch(Exception e)
+            {
+                Console.WriteLine("出错了：{0}", e.Message);
+            }
         }
 
 
