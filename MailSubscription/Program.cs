@@ -16,58 +16,130 @@ namespace MailSubscription
     {
         public string requestUrl;
         public string inputName;
+        public int isSend;
     }
 
     class Program
     {
         static List<PostData> dataList = new List<PostData>();
+        static int startSiteID;
 
         static void Main(string[] args)
         {
             DataTable dt = ReadCsv("top-1m.csv");
-            //Console.WriteLine(dt.Rows[101][1]);
+            CreateFile();
+            SetStartSiteID();
 
-            for (int i = 8070; i < 8100; i++)
+            for (int i = startSiteID - 1; i < 1000000; i++)
             {
-                Console.WriteLine(dt.Rows[i][1]);
+                Console.WriteLine(i + 1 + "  " + dt.Rows[i][1]);
 
                 string url = "http://www." + dt.Rows[i][1];
-                Console.WriteLine(url);
 
                 SetPostData(url);
+                HttpPost();
+                UpdateFile(i + 2);
             }
 
-            
+
+
 
 
             //bool re1 = SetPostData("http://www.vitaminstore.nl");
             //bool re2 = SetPostData("http://www.notonthehighstreet.com");
             //bool re3 = SetPostData("http://www.hongkiat.com");
             //bool re4 = SetPostData("http://www.vitaminedz.com");
+        }
 
-            WebClient client = new WebClient();
-            client.Encoding = System.Text.Encoding.Default;
-
-
-            foreach (var data in dataList)
+        /// <summary>
+        /// 创建保存 程序运行时第一个查找的网站ID 的txt文件 
+        /// </summary>
+        public static void CreateFile()
+        {
+            //文件不存在
+            if (!File.Exists("StartSiteID.txt"))
             {
-                Console.WriteLine("Request Url:{0}", data.requestUrl);
-                Console.WriteLine("Input Name:{0}", data.inputName);
 
-                //string s = client.OpenRead("http://www.notonthehighstreet.com/communication-preference", "newsletter_subscription[user_email]=lanziliang11@163.com");
+                FileStream fs1 = new FileStream("StartSiteID.txt", FileMode.Create, FileAccess.Write);//创建写入文件 
+                StreamWriter sw = new StreamWriter(fs1);
+                sw.WriteLine("1");//开始写入值
 
+                sw.Close();
+                fs1.Close();
+            }
+        }
+
+        /// <summary>
+        /// 读取文件设置StartSiteID的值
+        /// </summary>
+        public static void SetStartSiteID()
+        {
+            FileStream fs = new FileStream("StartSiteID.txt", FileMode.Open);
+            StreamReader sr = new StreamReader(fs);
+
+            sr.BaseStream.Seek(0, SeekOrigin.Begin);
+            string strLine = sr.ReadLine();
+            startSiteID = Convert.ToInt32(strLine);
+
+
+            sr.Close();
+            fs.Close();
+        }
+
+        /// <summary>
+        /// 更新文件，以便于下次运行程序时接下去查找
+        /// </summary>
+        /// <param name="id">当前查找的网站id</param>
+        public static void UpdateFile(int id)
+        {
+            FileStream fs = new FileStream("StartSiteID.txt", FileMode.Open, FileAccess.Write);
+            StreamWriter sr = new StreamWriter(fs);
+            sr.WriteLine(id);//开始写入值
+            sr.Close();
+            fs.Close();
+        }
+
+        /// <summary>
+        /// 发送POST请求
+        /// </summary>
+        public static void HttpPost()
+        {
+            List<PostData> noSendData = (from data in dataList
+                                         where data.isSend == 0
+                                         select data).ToList();
+            if (noSendData.Count > 0)
+            {
+                foreach (var data in noSendData.ToArray())
+                {
+                    if (data.isSend == 0)
+                    {
+                        WebClient client = new WebClient();
+                        client.Encoding = System.Text.Encoding.UTF8;
+
+                        Console.WriteLine("Request Url:{0}", data.requestUrl);
+                        Console.WriteLine("Input Name:{0}", data.inputName);
+
+                        if (data.requestUrl.Contains("https:"))
+                        {
+                            client.OpenReadWithHttps(data.requestUrl, data.inputName + "=lanziliang11@163.com");
+                            data.isSend = 1;
+                            dataList.Find(c => c.requestUrl == data.requestUrl).isSend = 1;
+                        }
+                        else
+                        {
+                            client.OpenRead(data.requestUrl, data.inputName + "=lanziliang11@163.com");
+                            data.isSend = 1;
+                            dataList.Find(c => c.requestUrl == data.requestUrl).isSend = 1;
+                        }
+                        Console.WriteLine("StatusCode:{0}\n", client.StatusCode);
+
+                    }
+                }
             }
 
-            Console.WriteLine("end");
 
-            
-
-
-            //foreach(var act in actionUrl)
-            //{
-            //    Console.WriteLine(act);
-            //}
         }
+
 
         /// <summary>
         /// 获取html页面数据
@@ -87,19 +159,19 @@ namespace MailSubscription
             }
             catch (WebException e)
             {
-                Console.WriteLine("出错了：{0}", e.Message);
+                Console.WriteLine("出错了：{0}\n", e.Message);
                 return null;
             }
         }
 
         /// <summary>
-        /// 获取表单的action值
+        /// 获取POST数据
         /// </summary>
         /// <param name="url"></param>
         /// <returns></returns>
         public static bool SetPostData(string url)
         {
-            string htmlStr = GetHtmlStr(url).ToLower();
+            string htmlStr = GetHtmlStr(url);
             //Console.WriteLine(htmlStr);
 
             //访问网站超时或出错
@@ -108,7 +180,7 @@ namespace MailSubscription
 
             HtmlDocument doc = new HtmlDocument();
             HtmlNode.ElementsFlags.Remove("form");
-            doc.LoadHtml(htmlStr);
+            doc.LoadHtml(htmlStr.ToLower());
             HtmlNode rootNode = doc.DocumentNode;
 
             //1.先查找所有form节点
@@ -119,7 +191,7 @@ namespace MailSubscription
 
             if (formNodes == null)
             {
-                Console.WriteLine("没有找到form");
+                Console.WriteLine("没有找到form\n");
                 return false;
             }
 
@@ -131,7 +203,7 @@ namespace MailSubscription
                 if (((emailInput = formNode.SelectNodes(".//input[(@type='email' or @type='text') and contains(@name,'email')]")) != null) && (formNode.SelectNodes(".//input[@type='password']") == null))
                 {
 
-                    Console.WriteLine("111");
+                    Console.WriteLine("成功找到\n");
                     string _requestUrl;
                     string _inputName;
 
@@ -141,7 +213,7 @@ namespace MailSubscription
                     {
                         _requestUrl = url;
                     }
-                    else if (action.Contains("http:"))
+                    else if (action.Contains("http:") || action.Contains("https:"))
                     {
                         _requestUrl = action;
                     }
@@ -154,7 +226,7 @@ namespace MailSubscription
                     _inputName = emailInput.First().Attributes["name"].Value;
 
                     //添加到dataList中
-                    dataList.Add(new PostData { requestUrl = _requestUrl, inputName = _inputName });
+                    dataList.Add(new PostData { requestUrl = _requestUrl, inputName = _inputName, isSend = 0 });
 
                     return true;
                 }
@@ -164,7 +236,7 @@ namespace MailSubscription
                 }
             }
 
-            Console.WriteLine("没有找到email subscribe");
+            Console.WriteLine("没有找到email subscribe \n");
             return false;
         }
 
