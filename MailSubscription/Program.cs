@@ -211,7 +211,7 @@ namespace MailSubscription
                 }
                 return result;
             }
-            catch (WebException e)
+            catch (Exception e)
             {
                 Console.WriteLine("出错了：{0}\n", e.Message);
                 return null;
@@ -292,7 +292,7 @@ namespace MailSubscription
                     {
                         foreach (var hiddenInput in hiddenInputs)
                         {
-                            if (hiddenInput.Attributes["value"] == null)
+                            if (hiddenInput.Attributes["value"] == null && hiddenInput.Attributes["name"] != null)
                             {
                                 hiddenStr += hiddenInput.Attributes["name"].Value + "=&";
                             }
