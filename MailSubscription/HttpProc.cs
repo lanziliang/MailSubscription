@@ -183,7 +183,7 @@ namespace MailSubscription
                 reader.Close();
                 return respHtml;
             }
-            catch (WebException e)
+            catch (Exception e)
             {
                 Console.WriteLine("出错了：{0}", e.Message);
                 return null;

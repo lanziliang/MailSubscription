@@ -8,168 +8,141 @@ using HtmlAgilityPack;
 using System.IO;
 using System.Xml.XPath;
 using System.Data;
+using System.Threading;
+using System.Xml;
 
 
 namespace MailSubscription
 {
-    class PostData
-    {
-        public string requestUrl;
-        public string sendData;
-        public int isSend;
-    }
-
     class Program
     {
-        static List<PostData> dataList = new List<PostData>();
-        static int startSiteID;
+
+        static int flag = 0;
+        //线程数
+        static int threadNum = 20;
+        static int startNum = 15000;
+        static int[] startSiteID = new int[threadNum];
+
+        static DataTable dt;
+        static string Email = "mailsubscribe@163.com";
+        //static string Email = "lanziliang11@163.com";
 
         static void Main(string[] args)
         {
-            DataTable dt = ReadCsv("top-1m.csv");
-            CreateFile();
+            //读取csv文件内容
+            dt = ReadCsv("top-1m.csv");
+
+            //设置开始查询网站ID
             SetStartSiteID();
 
-            for (int i = startSiteID - 1; i < 1000000; i++)
+
+            //多线程执行查询
+            Thread product;
+            ParameterizedThreadStart pts_product = new ParameterizedThreadStart(SetPostData);
+
+            for (int i = 0; i < threadNum; i++)
             {
-                Console.WriteLine(i + 1 + "  " + dt.Rows[i][1]);
+                product = new Thread(pts_product);
+                product.Name = "Thread" + (i + 1).ToString();
+                product.Start(startSiteID[i]);
+            }
 
-                string url = "http://www." + dt.Rows[i][1];
 
-                if (SetPostData(url))
+
+            //定时更新XML
+            while (true)
+            {
+                if (flag > 20)
                 {
-                    HttpPost();
+                    UpdateXML();
+                    flag = 0;
                 }
-                UpdateFile(i + 2);
+                //Thread.Sleep(10000);
             }
 
-
-            //WebClient client = new WebClient();
-            //client.Encoding = System.Text.Encoding.UTF8;
-            //client.OpenRead("http://www.notonthehighstreet.com/communication-preference", "utf8=✓&authenticity_token=jrnpYJUC00m8zPDcUx4RdMKEq9BofUmfiwa5T5Ey/AM=&newsletter_subscription[user_email]=lanziliang11@163.com&commit=subscribe");
-            //client.OpenRead("http://www.vitaminstore.nl/", "__EVENTTARGET=&__EVENTARGUMENT=&__VIEWSTATE=/wEPDwUJOTkyNDIyMjA4ZGTnduirsFs23eouAY8DK32LKtjOwNAmt0imFpZROy3NcQ==&ctl00$cpContent$NewsletterSignup1$btnSignup=AANMELDEN&ctl00$cpContent$NewsletterSignup1$txtEmail=lanziliang11@163.com");
-            //client.OpenRead("http://www.vitaminstore.nl/", "__eventtarget=&__eventargument=&__viewstate=/wepdwujotkyndiymja4zgtnduirsfs23eouay8dk32lktjownamt0imfpzroy3ncq==&ctl00$cpcontent$newslettersignup1$btnsignup=aanmelden&ctl00$cpcontent$newslettersignup1$txtemail=lanziliang11@163.com");
-            //Console.WriteLine("StatusCode:{0}\n", client.StatusCode);
-
-            //bool re1 = SetPostData("http://www.vitaminstore.nl");
-            //bool re2 = SetPostData("http://www.notonthehighstreet.com");
-            //bool re3 = SetPostData("http://www.hongkiat.com");
-            //bool re4 = SetPostData("http://www.vitaminedz.com");
         }
 
         /// <summary>
-        /// 创建保存 程序运行时第一个查找的网站ID 的txt文件 
-        /// </summary>
-        public static void CreateFile()
-        {
-            //文件不存在
-            if (!File.Exists("StartSiteID.txt"))
-            {
-
-                FileStream fs1 = new FileStream("StartSiteID.txt", FileMode.Create, FileAccess.Write);//创建写入文件 
-                StreamWriter sw = new StreamWriter(fs1);
-                sw.WriteLine("1");//开始写入值
-
-                sw.Close();
-                fs1.Close();
-            }
-        }
-
-        /// <summary>
-        /// 读取文件设置StartSiteID的值
+        /// 从xml文档中获取数据  初始化 StartSiteID[]
         /// </summary>
         public static void SetStartSiteID()
         {
-            FileStream fs = new FileStream("StartSiteID.txt", FileMode.Open);
-            StreamReader sr = new StreamReader(fs);
+            bool bl = File.Exists("StartSiteID.xml");
+            if (bl == false && startNum >= 0)
+            {
+                //创建新的XML
+                XmlDocument doc = new XmlDocument();
+                XmlDeclaration Declaration = doc.CreateXmlDeclaration("1.0", "utf-8", null);
+                XmlNode root = doc.CreateElement("root");
+                XmlNode item = doc.CreateElement("item");
+                XmlElement th;
+                for (int i = 0; i < threadNum; i++)
+                {
+                    startSiteID[i] = i + startNum;
+                    th = doc.CreateElement("Thread" + (i + 1).ToString());
+                    th.InnerText = (i + startNum).ToString();
+                    item.AppendChild(th);
+                }
 
-            sr.BaseStream.Seek(0, SeekOrigin.Begin);
-            string strLine = sr.ReadLine();
-            startSiteID = Convert.ToInt32(strLine);
-
-
-            sr.Close();
-            fs.Close();
+                root.AppendChild(item);
+                doc.AppendChild(root);
+                doc.InsertBefore(Declaration, doc.DocumentElement);
+                doc.Save("StartSiteID.xml");
+            }
+            else
+            {
+                XmlDocument doc = new XmlDocument();
+                doc.Load("StartSiteID.xml");
+                XmlElement x;
+                for (int i = 0; i < threadNum; i++)
+                {
+                    x = (XmlElement)doc.GetElementsByTagName("Thread" + (i + 1).ToString())[0];
+                    startSiteID[i] = int.Parse(x.InnerText);
+                }
+            }
         }
 
+
         /// <summary>
-        /// 更新文件，以便于下次运行程序时接下去查找
+        /// 更新xml文件，以便于下次运行程序时接下去查找
         /// </summary>
-        /// <param name="id">当前查找的网站id</param>
-        public static void UpdateFile(int id)
+        public static void UpdateXML()
         {
-            FileStream fs = new FileStream("StartSiteID.txt", FileMode.Open, FileAccess.Write);
-            StreamWriter sr = new StreamWriter(fs);
-            sr.WriteLine(id);//开始写入值
-            sr.Close();
-            fs.Close();
+            XmlDocument doc = new XmlDocument();
+            XmlElement x;
+            doc.Load("StartSiteID.xml");
+
+            for (int i = 0; i < threadNum; i++)
+            {
+                x = (XmlElement)doc.GetElementsByTagName("Thread" + (i + 1).ToString())[0];
+                x.InnerText = startSiteID[i].ToString();
+            }
+
+            doc.Save("StartSiteID.xml");
         }
 
         /// <summary>
         /// 发送POST请求
         /// </summary>
-        public static void HttpPost()
+        public static void HttpPost(int id, string requestUrl, string sendData)
         {
-            List<PostData> noSendData = (from data in dataList
-                                         where data.isSend == 0
-                                         select data).ToList();
-            if (noSendData.Count > 0)
+
+            WebClient client = new WebClient();
+            client.Encoding = System.Text.Encoding.UTF8;
+
+            if (requestUrl.Contains("https:"))
             {
-                foreach (var data in noSendData.ToArray())
-                {
-                    if (data.isSend == 0)
-                    {
-                        WebClient client = new WebClient();
-                        client.Encoding = System.Text.Encoding.UTF8;
-
-                        Console.WriteLine("Request Url:{0}", data.requestUrl);
-                        Console.WriteLine("Form Data:{0}", data.sendData);
-
-                        if (data.requestUrl.Contains("https:"))
-                        {
-                            client.OpenReadWithHttps(data.requestUrl, data.sendData);
-                            data.isSend = 1;
-                            dataList.Find(c => c.requestUrl == data.requestUrl).isSend = 1;
-                        }
-                        else
-                        {
-                            client.OpenRead(data.requestUrl, data.sendData);
-                            data.isSend = 1;
-                            dataList.Find(c => c.requestUrl == data.requestUrl).isSend = 1;
-                        }
-                        Console.WriteLine("Status Code:{0}\n", client.StatusCode);
-
-                    }
-                }
+                client.OpenReadWithHttps(requestUrl, sendData);
             }
-
-
+            else
+            {
+                client.OpenRead(requestUrl, sendData);
+            }
+            Console.WriteLine("Site ID:{0}", id);
+            Console.WriteLine("Request Url:{0}", requestUrl);
+            Console.WriteLine("Form Data:{0}", sendData);
+            Console.WriteLine("Status Code:{0}\n", client.StatusCode);
         }
-
-
-        /// <summary>
-        /// 获取html页面数据
-        /// </summary>
-        /// <param name="url"></param>
-        /// <returns></returns>
-        //public static string GetHtmlStr(string url)
-        //{
-        //    try
-        //    {
-        //        WebRequest rGet = WebRequest.Create(url);
-        //        rGet.Timeout = 10000;
-        //        WebResponse rSet = rGet.GetResponse();
-        //        Stream s = rSet.GetResponseStream();
-        //        StreamReader reader = new StreamReader(s, Encoding.UTF8);
-        //        return reader.ReadToEnd();
-        //    }
-        //    catch (WebException e)
-        //    {
-        //        Console.WriteLine("出错了：{0}\n", e.Message);
-        //        return null;
-        //    }
-        //}
-
 
         /// <summary>
         /// 获取html页面数据
@@ -177,7 +150,7 @@ namespace MailSubscription
         /// <param name="Url"></param>
         /// <param name="encoding"></param>
         /// <returns></returns>
-        public static string GetStringByUrl(string Url, System.Text.Encoding encoding)
+        public static string GetStringByUrl(int id, string Url, System.Text.Encoding encoding)
         {
             StreamReader sreader = null;
             string result = string.Empty;
@@ -213,6 +186,7 @@ namespace MailSubscription
             }
             catch (Exception e)
             {
+                Console.WriteLine(id + "  " + Url);
                 Console.WriteLine("出错了：{0}\n", e.Message);
                 return null;
             }
@@ -223,111 +197,135 @@ namespace MailSubscription
         /// </summary>
         /// <param name="url"></param>
         /// <returns></returns>
-        public static bool SetPostData(string url)
+        public static void SetPostData(object obj)
         {
-            string htmlStr = GetStringByUrl(url, Encoding.UTF8);
-            //Console.WriteLine(htmlStr);
+            int startID = (int)obj;
+            int startIDIndex = startID % threadNum;
 
-            //访问网站超时或出错
-            if (htmlStr == null)
-                return false;
-
-            HtmlDocument doc = new HtmlDocument();
-            HtmlNode.ElementsFlags.Remove("form");
-            doc.LoadHtml(htmlStr);
-            HtmlNode rootNode = doc.DocumentNode;
-
-            //1.先查找所有form节点
-            //2.再查找包含input节点（name属性含有email）并且不包含password的input框 的form节点
-            //3.获取action和input的name值，以及隐藏表单的name和value
-
-            HtmlNodeCollection formNodes = rootNode.SelectNodes("//form[@method='post' or @method='POST' or @method='Post']");
-
-            if (formNodes == null)
+            for (int i = 0 + startID; i < dt.Rows.Count; i += threadNum, flag++)
             {
-                Console.WriteLine("没有找到form\n");
-                return false;
-            }
+                startSiteID[startIDIndex] = i;
 
-            //遍历form节点
-            foreach (var formNode in formNodes)
-            {
-                HtmlNodeCollection emailInput;
-                //表单包含email输入框并且不包含密码输入框
-                if (((emailInput = formNode.SelectNodes(".//input[(@type='email' or @type='text') and (contains(@name,'email') or contains(@name,'Email') or contains(@name,'EMAIL'))]")) != null) && ((formNode.SelectNodes(".//input[@type='password']") == null) || formNode.SelectNodes(".//input[@type='password']").First().Attributes["name"] == null))
+
+
+                string url = "http://www." + dt.Rows[i][1];
+
+
+                string htmlStr = GetStringByUrl(i + 1, url, Encoding.UTF8);
+                //Console.WriteLine(htmlStr);
+
+                //访问网站超时或出错
+                if (htmlStr == null)
+                    continue;
+
+                HtmlDocument doc = new HtmlDocument();
+                HtmlNode.ElementsFlags.Remove("form");
+                doc.LoadHtml(htmlStr);
+                HtmlNode rootNode = doc.DocumentNode;
+
+                //1.先查找所有form节点
+                //2.再查找包含input节点（name属性含有email）并且不包含password的input框 的form节点
+                //3.获取action和input的name值，以及隐藏表单的name和value
+
+                HtmlNodeCollection formNodes = rootNode.SelectNodes("//form[@method='post' or @method='POST' or @method='Post']");
+
+                if (formNodes == null)
                 {
-                    if (formNode.Attributes["action"] == null)
-                    {
-                        Console.WriteLine("没有找到form的action属性\n");
-                        return false;
-                    }
-                    Console.WriteLine("成功找到\n");
+                    Console.WriteLine(i + 1 + "  " + url);
+                    Console.WriteLine("没有找到form\n");
+                    continue;
+                }
 
-                    string _requestUrl;
-                    string _sendData;
+                //遍历form节点
+                foreach (var formNode in formNodes)
+                {
+                    HtmlNodeCollection emailInput;
+                    //表单包含email输入框并且不包含密码输入框
+                    if (((emailInput = formNode.SelectNodes(".//input[(@type='email' or @type='text') and (contains(@name,'email') or contains(@name,'Email') or contains(@name,'EMAIL'))]")) != null) && ((formNode.SelectNodes(".//input[@type='password']") == null) || formNode.SelectNodes(".//input[@type='password']").First().Attributes["name"] == null))
+                    {
+                        if (formNode.Attributes["action"] == null)
+                        {
+                            Console.WriteLine(i + 1 + "  " + url);
+                            Console.WriteLine("没有找到form的action属性\n");
+                            continue;
+                        }
 
-                    //获取action 并组装post请求地址
-                    string action = formNode.Attributes["action"].Value;
-                    if (string.IsNullOrEmpty(action))
-                    {
-                        _requestUrl = url;
-                    }
-                    else if (action.ToLower().Contains("http:") || action.ToLower().Contains("https:"))
-                    {
-                        _requestUrl = action;
+                        Console.WriteLine(i + 1 + "  " + url);
+                        Console.WriteLine("成功找到\n");
+
+                        //保存POST地址和发送的数据
+                        string _requestUrl;
+                        string _sendData;
+
+                        //获取action 并组装post请求地址
+                        string action = formNode.Attributes["action"].Value;
+                        if (string.IsNullOrEmpty(action))
+                        {
+                            _requestUrl = url;
+                        }
+                        else if (action.ToLower().Contains("http:") || action.ToLower().Contains("https:"))
+                        {
+                            _requestUrl = action;
+                        }
+                        else
+                        {
+                            _requestUrl = url + action;
+                        }
+
+
+                        string hiddenStr = "";
+                        string submitStr = "";
+                        string emailStr = "";
+
+                        //获取隐藏的表单数据
+                        HtmlNodeCollection hiddenInputs = formNode.SelectNodes(".//input[@type='hidden']");
+                        if (hiddenInputs != null)
+                        {
+                            foreach (var hiddenInput in hiddenInputs)
+                            {
+                                if (hiddenInput.Attributes["value"] == null && hiddenInput.Attributes["name"] != null)
+                                {
+                                    hiddenStr += hiddenInput.Attributes["name"].Value + "=&";
+                                }
+                                else if (hiddenInput.Attributes["name"] != null)
+                                {
+                                    hiddenStr += hiddenInput.Attributes["name"].Value + "=" + hiddenInput.Attributes["value"].Value + "&";
+                                }
+                            }
+                        }
+
+
+                        //获取提交按钮数据
+                        HtmlNodeCollection submitInput = formNode.SelectNodes(".//input[@type='submit']");
+
+                        if (submitInput != null && submitInput.First().Attributes["value"] != null && submitInput.First().Attributes["name"] != null)
+                        {
+                            submitStr = submitInput.First().Attributes["name"].Value + "=" + submitInput.First().Attributes["value"].Value + "&";
+                        }
+
+                        //获取email input属性name的值   
+                        emailStr = emailInput.First().Attributes["name"].Value + "=" + Email;
+
+
+                        //拼凑要发送的数据
+                        _sendData = hiddenStr + submitStr + emailStr;
+
+                        //成功找到后直接POST
+                        HttpPost(i + 1, _requestUrl, _sendData);
+
+                        continue;
                     }
                     else
                     {
-                        _requestUrl = url + action;
+                        continue;
                     }
-
-
-                    string hiddenStr = "";
-                    string submitStr = "";
-                    string emailStr = "";
-
-                    //获取隐藏的表单数据
-                    HtmlNodeCollection hiddenInputs = formNode.SelectNodes(".//input[@type='hidden']");
-                    if (hiddenInputs != null)
-                    {
-                        foreach (var hiddenInput in hiddenInputs)
-                        {
-                            if (hiddenInput.Attributes["value"] == null && hiddenInput.Attributes["name"] != null)
-                            {
-                                hiddenStr += hiddenInput.Attributes["name"].Value + "=&";
-                            }
-                            else if (hiddenInput.Attributes["name"] != null)
-                            {
-                                hiddenStr += hiddenInput.Attributes["name"].Value + "=" + hiddenInput.Attributes["value"].Value + "&";
-                            }
-                        }
-                    }
-
-                    HtmlNodeCollection submitInput = formNode.SelectNodes(".//input[@type='submit']");
-
-                    if (submitInput != null && submitInput.First().Attributes["value"] != null && submitInput.First().Attributes["name"] != null)
-                    {
-                        submitStr = submitInput.First().Attributes["name"].Value + "=" + submitInput.First().Attributes["value"].Value + "&";
-                    }
-
-                    //获取input属性name的值
-                    emailStr = emailInput.First().Attributes["name"].Value + "=mailsubscribe@163.com";
-
-                    _sendData = hiddenStr + submitStr + emailStr;
-
-                    //添加到dataList中
-                    dataList.Add(new PostData { requestUrl = _requestUrl, sendData = _sendData, isSend = 0 });
-
-                    return true;
                 }
-                else
-                {
-                    continue;
-                }
+
+                Console.WriteLine(i + 1 + "  " + url);
+                Console.WriteLine("没有找到email subscribe \n");
+                continue;
+
             }
-
-            Console.WriteLine("没有找到email subscribe \n");
-            return false;
         }
 
         /// <summary>
